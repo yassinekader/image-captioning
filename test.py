@@ -110,7 +110,7 @@ class ImageCaptioningModel(nn.Module):
 # Helpers
 # ==========================================
 
-def reassemble_model(output_path="best_model.pth", parts_pattern="best_model.pth.part_*"):
+def reassemble_model(output_path="best_model.pth", parts_pattern="model_parts/best_model.pth.part_*"):
     """Reassemble split model parts into the full model file."""
     parts = sorted(glob.glob(parts_pattern))
     if not parts:
@@ -138,7 +138,7 @@ def load_trained_model(checkpoint_path, device):
     if not os.path.exists(checkpoint_path):
         print(f"Model file {checkpoint_path} not found.")
         # Try to find parts
-        if not reassemble_model(checkpoint_path, checkpoint_path + ".part_*"):
+        if not reassemble_model(checkpoint_path, "model_parts/" + checkpoint_path + ".part_*"):
             print(f"Error: Could not find model or model parts for {checkpoint_path}")
             sys.exit(1)
 

@@ -27,7 +27,7 @@ wheels/
 *.ckpt
 # Ignore the large assembled file but keep the parts
 best_model.pth
-!best_model.pth.part_*
+!model_parts/best_model.pth.part_*
 
 # Jupyter Notebook
 .ipynb_checkpoints

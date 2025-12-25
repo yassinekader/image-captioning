@@ -22,10 +22,20 @@ The dataset used is **Flickr30k**.
 ├── report.tex           # LaTeX source of the report
 ├── best_model.pth       # Checkpoint of the best trained model
 ├── images/              # Images used for the report and testing
-└── output_examples/     # Generated results
+├── output_examples/     # Generated results
+└── model_parts/         # Split parts of the trained model (GitHub size limit workaround)
 ```
 
 ## 🚀 Usage
+
+### ⚠️ Model Reassembly (Important)
+Since the model file is large (>100MB), it is split into parts in `model_parts/`.
+**Ideally, the `test.py` script will automatically reassemble it for you.**
+
+However, if you want to manually reassemble it (e.g., for training):
+```bash
+cat model_parts/best_model.pth.part_* > best_model.pth
+```
 
 ### Prerequisites
 Ensure you have installed the necessary dependencies:
