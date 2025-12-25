@@ -1,0 +1,40 @@
+
+# Python
+__pycache__/
+*.py[cod]
+*$py.class
+*.so
+.Python
+env/
+build/
+develop-eggs/
+dist/
+downloads/
+eggs/
+.eggs/
+lib/
+lib64/
+parts/
+sdist/
+var/
+wheels/
+*.egg-info/
+.installed.cfg
+*.egg
+
+# Model Checkpoints (Large files)
+*.bin
+*.ckpt
+# Ignore the large assembled file but keep the parts
+best_model.pth
+!best_model.pth.part_*
+
+# Jupyter Notebook
+.ipynb_checkpoints
+
+# Virtual Environment
+venv/
+.env
+
+# OS
+.DS_Store

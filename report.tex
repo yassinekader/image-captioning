@@ -1,0 +1,308 @@
+\documentclass[a4paper,12pt]{article}
+\usepackage[utf8]{inputenc}
+\usepackage[T1]{fontenc}
+\usepackage[french]{babel}
+\usepackage{graphicx}
+\usepackage{geometry}
+\usepackage{hyperref}
+\usepackage{amsmath}
+\usepackage{amssymb}
+\usepackage{booktabs}
+\usepackage{float}
+\usepackage{color}
+\usepackage{setspace}
+\usepackage{array}
+
+\geometry{hmargin=2.5cm,vmargin=2.5cm}
+\setlength{\parskip}{1em}
+
+\begin{document}
+
+% Page de garde
+\begin{titlepage}
+    \begin{center}
+        \includegraphics[width=0.3\textwidth]{images/university_logo.png} \hfill
+        \includegraphics[width=0.3\textwidth]{images/ensa_logo.png}
+        
+        \vspace{2cm}
+        
+        \Huge
+        \textbf{Rapport de TP : Attention}
+        
+        \vspace{0.5cm}
+        \Large
+        \textit{Génération de légendes d'images avec CNN, RNN et Mécanisme d'Attention}
+        
+        \vspace{2cm}
+        
+        \textbf{Réalisé par :} \\
+        Yassine KADER \\
+        \vspace{0.5cm}
+        \textbf{Encadré par :} \\
+        Pr. Youness ABOUQORA
+        
+        \vspace{1cm}
+        
+        \textbf{Matière :} \\
+        IA GENERATIVE ET INGENIERIE DES PROMPTS
+        
+        \vspace{3cm}
+        
+        \today
+        
+    \end{center}
+\end{titlepage}
+
+\tableofcontents
+\newpage
+
+\section{Introduction}
+L'objectif de ce travail pratique est de développer un modèle de \textit{Image Captioning} (légendage automatique d'images). Cette tâche consiste à générer une description textuelle naturelle et pertinente pour une image donnée. Elle se situe à l'intersection de deux domaines majeurs de l'intelligence artificielle : la Vision par Ordinateur (\textit{Computer Vision}) et le Traitement Automatique du Langage Naturel (\textit{Natural Language Processing} ou NLP).
+
+Le défi réside dans le fait que le modèle doit non seulement reconnaître les objets présents dans l'image (détection d'objets), mais aussi comprendre leurs relations spatiales, leurs actions et leurs attributs, pour ensuite articuler ces informations dans une phrase grammaticalement correcte.
+
+Dans ce TP, nous implémentons une architecture hybride qui combine :
+\begin{itemize}
+    \item Un \textbf{Encodeur visuel} basé sur un Réseau de Neurones Convolutif (CNN), spécifiquement un ResNet50 pré-entraîné, pour extraire les caractéristiques de l'image.
+    \item Un \textbf{Décodeur séquentiel} basé sur un Réseau de Neurones Récurrent (RNN), spécifiquement un LSTM (\textit{Long Short-Term Memory}), pour générer la phrase mot par mot.
+    \item Un \textbf{Mécanisme d'Attention} qui permet au décodeur de se focaliser sur des zones spécifiques de l'image à chaque pas de la génération, améliorant ainsi la précision et la pertinence des descriptions.
+\end{itemize}
+
+Nous utilisons le dataset \textbf{Flickr30k}, qui contient plus de 30 000 images, chacune annotée avec plusieurs descriptions, offrant un corpus riche et varié pour l'entraînement.
+
+\newpage
+
+\section{Cadre Théorique}
+
+\subsection{Réseaux de Neurones Convolutifs (CNN) et Transfer Learning}
+Les CNN sont l'état de l'art pour le traitement des images. Ils utilisent des couches de convolution pour apprendre hiérarchiquement des motifs visuels, allant des bords simples aux formes complexes et aux objets entiers.
+
+Pour ce projet, nous utilisons l'apprentissage par transfert (\textit{Transfer Learning}). Entraîner un CNN profond à partir de zéro nécessite des millions d'images et une puissance de calcul considérable. Au lieu de cela, nous utilisons \textbf{ResNet50}, un modèle pré-entraîné sur le dataset ImageNet (1,2 million d'images, 1000 classes).
+
+\subsubsection{Architecture ResNet et Apprentissage Résiduel}
+ResNet (Residual Network) a introduit le concept de connexions résiduelles (\textit{skip connections}). Dans un réseau très profond, le gradient a tendance à s'évanouir (\textit{vanishing gradient}) lors de la rétropropagation, rendant l'apprentissage difficile.
+Les blocs résiduels permettent au gradient de "sauter" des couches :
+\begin{equation}
+    y = \mathcal{F}(x, \{W_i\}) + x
+\end{equation}
+Cela permet d'entraîner des réseaux beaucoup plus profonds (50, 101, ou 152 couches) tout en facilitant l'optimisation.
+
+Dans notre cas, nous supprimons les dernières couches de classification de ResNet50 pour récupérer les cartes de caractéristiques (\textit{feature maps}) brutes. Ces cartes conservent l'information spatiale de l'image, ce qui est crucial pour le mécanisme d'attention.
+
+\subsection{Réseaux Récurrents (RNN) et LSTM}
+Les RNN sont conçus pour traiter des données séquentielles. Ils possèdent une "mémoire" sous forme d'état caché $h_t$ qui est mis à jour à chaque pas de temps $t$.
+
+Cependant, les RNN classiques souffrent du problème de disparition de gradient sur de longues séquences. Pour pallier cela, nous utilisons un \textbf{LSTM} (Long Short-Term Memory). Le LSTM introduit une cellule mémoire $c_t$ et trois portes logiques qui régulent le flux d'information :
+
+\begin{itemize}
+    \item \textbf{Porte d'entrée ($i_t$)} : Décide quelle nouvelle information stocker dans la cellule.
+    \item \textbf{Porte d'oubli ($f_t$)} : Décide quelle information supprimer de la cellule.
+    \item \textbf{Porte de sortie ($o_t$)} : Décide quelle information envoyer en sortie (vers l'état caché $h_t$).
+\end{itemize}
+
+\subsection{Mécanisme d'Attention (Soft Attention)}
+Dans une approche encodeur-décodeur classique, toute l'image est compressée en un seul vecteur fixe. Cela pose problème pour les images complexes où plusieurs détails sont importants.
+
+L'attention permet au modèle de calculer une "carte de pertinence" à chaque instant. Au lieu de regarder toute l'image avec la même intensité, le décodeur attribue un poids $\alpha_{ti}$ à chaque région $i$ de l'image au temps $t$.
+
+\begin{equation}
+    z_t = \sum_{i} \alpha_{ti} a_i
+\end{equation}
+
+où $a_i$ sont les vecteurs de caractéristiques spatiaux extraits par le CNN et $z_t$ est le vecteur de contexte dynamique. Les poids $\alpha$ sont appris par le réseau lui-même.
+
+\newpage
+
+\section{Implémentation Détaillée}
+
+\subsection{Préparation des Données et Embeddings}
+Le dataset Flickr30k a subi un prétraitement rigoureux.
+\begin{itemize}
+    \item \textbf{Normalisation} : Les images sont centrées réduites (moyenne et écart-type d'ImageNet).
+    \item \textbf{Vocabulaire} : Nous avons construit un dictionnaire associant chaque mot unique à un index entier.
+    \item \textbf{Word2Vec} : Pour enrichir la représentation sémantique, nous avons initialisé la couche d'embedding avec des vecteurs pré-entraînés (Google News 300d). Cela permet au modèle de comprendre que "chien" et "chiot" sont sémantiquement proches dès le début de l'entraînement.
+\end{itemize}
+
+\subsection{Module d'Attention Personnalisé}
+Au lieu de présenter le code source, nous décrivons ici l'architecture détaillée du module d'attention que nous avons implémenté. Ce module agit comme une interface intelligente entre les caractéristiques visuelles (CNN) et l'état courant du décodeur (LSTM).
+
+\begin{table}[H]
+    \centering
+    \renewcommand{\arraystretch}{1.5}
+    \begin{tabular}{p{4cm} p{5cm} p{6cm}}
+        \toprule
+        \textbf{Composant} & \textbf{Opération / Dimension} & \textbf{Rôle} \\
+        \midrule
+        \textbf{Inputs} & \textbf{Visual Features}: $(Batch, 2048, H, W)$ \newline \textbf{Hidden State}: $(Batch, Hidden_{dim})$ & Information visuelle brute et état actuel de la génération. \\
+        \midrule
+        \textbf{Flattening} & Reshape $\rightarrow (Batch, L, 2048)$ & Aplatissement des dimensions spatiales ($L=H \times W$). \\
+        \midrule
+        \textbf{Expansion} & Repeat Hidden $\rightarrow (Batch, L, Hidden_{dim})$ & Alignement de l'état caché avec chaque pixel. \\
+        \midrule
+        \textbf{Concaténation} & Concat $\rightarrow (Batch, L, 2048 + Hidden_{dim})$ & Fusion de l'information visuelle et contextuelle. \\
+        \midrule
+        \textbf{Linear 1 (W\_att)} & Linear $\rightarrow (Batch, L, Att_{dim})$ + Tanh & Projection dans l'espace d'attention latent. \\
+        \midrule
+        \textbf{Linear 2 (V\_att)} & Linear $\rightarrow (Batch, L, 1)$ & Calcul du score de pertinence brut pour chaque pixel. \\
+        \midrule
+        \textbf{Attention Weights} & Softmax sur la dim L & Normalisation pour obtenir une distribution de probabilité ($\sum \alpha = 1$). \\
+        \midrule
+        \textbf{Context Vector ($z_t$)} & Somme pondérée & Création du vecteur final résumant les zones pertinentes de l'image. \\
+        \bottomrule
+    \end{tabular}
+    \caption{Architecture fonctionnelle du module d'Attention.}
+    \label{tab:attention_arch}
+\end{table}
+
+\subsection{LSTM avec Attention Intégrée}
+Le cœur du décodeur est un LSTM modifié où le vecteur de contexte est injecté à chaque étape de calcul des portes. Voici la structure des opérations par pas de temps :
+
+\begin{table}[H]
+    \centering
+    \renewcommand{\arraystretch}{1.5}
+    \begin{tabular}{p{3.5cm} p{5.5cm} p{6cm}}
+        \toprule
+        \textbf{Étape} & \textbf{Entrées Combinées} & \textbf{Calcul Effectué} \\
+        \midrule
+        \textbf{Input Combination} & $x_t$ (Word Emb), $h_{t-1}$, $z_t$ (Context) & Concaténation des trois vecteurs sources. \\
+        \midrule
+        \textbf{Input Gate ($i_t$)} & Vecteur Combiné & $\sigma(W_i \cdot Combined + b_i)$ - Contrôle l'ajout d'info. \\
+        \midrule
+        \textbf{Forget Gate ($f_t$)} & Vecteur Combiné & $\sigma(W_f \cdot Combined + b_f)$ - Contrôle l'oubli. \\
+        \midrule
+        \textbf{Output Gate ($o_t$)} & Vecteur Combiné & $\sigma(W_o \cdot Combined + b_o)$ - Contrôle la sortie. \\
+        \midrule
+        \textbf{Cell Update ($c_t$)} & $f_t, c_{t-1}, i_t$ & Mise à jour de la mémoire interne. \\
+        \midrule
+        \textbf{Output ($h_t$)} & $o_t, c_t$ & $o_t \cdot \tanh(c_t)$ - Nouvel état caché du RNN. \\
+        \bottomrule
+    \end{tabular}
+    \caption{Structure interne de la cellule LSTM modifiée.}
+    \label{tab:lstm_arch}
+\end{table}
+
+\subsection{Question : Pourquoi geler les poids du ResNet ? (I.6)}
+Dans ce TP, nous avons gelé (\textit{freeze}) les poids du modèle ResNet50 (en mettant \texttt{requires\_grad = False}).
+Cette étape est cruciale pour plusieurs raisons :
+\begin{enumerate}
+    \item \textbf{Prévention du sur-apprentissage (Overfitting)} : Notre dataset Flickr30k (30k images) est relativement petit comparé à ImageNet (1.2M images). Si nous ré-entraînions tout le ResNet (25M de paramètres), le modèle mémoriserait rapidement les images au lieu d'apprendre des caractéristiques généralisables.
+    \item \textbf{Préservation des connaissances} : ResNet50 a déjà appris des filtres très performants pour détecter des formes, textures et objets. Nous voulons utiliser ces connaissances telles quelles, agissant comme un extracteur de caractéristiques fixe et robuste.
+    \item \textbf{Efficacité computationnelle} : Calculer les gradients pour les 50 couches du ResNet à chaque itération est très coûteux en mémoire (VRAM) et en temps de calcul. Geler les poids accélère considérablement l'entraînement de la partie RNN.
+\end{enumerate}
+
+\newpage
+
+\section{Résultats Expérimentaux}
+
+\subsection{Protocole d'Entraînement}
+Le modèle a été entraîné avec les hyperparamètres suivants :
+\begin{itemize}
+    \item \textbf{Optimiseur} : Adam (Adaptive Moment Estimation), reconnu pour sa rapidité de convergence.
+    \item \textbf{Fonction de Coût} : CrossEntropyLoss, classique pour les tâches de classification de mots.
+    \item \textbf{Learning Rate} : Initialisé à 0.001, avec un \textit{Scheduler} de type \texttt{StepLR} qui réduit le taux d'apprentissage périodiquement pour affiner la convergence.
+    \item \textbf{Taille de Batch} : 32.
+\end{itemize}
+
+\subsection{Analyse de la Convergence}
+Les graphiques ci-dessous montrent l'évolution de la fonction de perte (Loss) au cours de l'entraînement.
+
+\begin{figure}[H]
+    \centering
+    \includegraphics[width=0.8\textwidth]{images/loss_per_train_batch.png}
+    \caption{Évolution de la Perte par batch. La courbe montre une diminution bruitée mais constante, typique de la descente de gradient stochastique.}
+    \label{fig:loss_batch}
+\end{figure}
+
+\begin{figure}[H]
+    \centering
+    \includegraphics[width=0.8\textwidth]{images/loss_train_epoch.png}
+    \caption{Évolution de la Perte moyenne par époque. La décroissance est fluide, indiquant un apprentissage stable.}
+    \label{fig:loss_epoch}
+\end{figure}
+
+Le Scheduler a réduit le Learning Rate par paliers, ce qui est visible sur la courbe ci-dessous. Cette technique permet de faire de grands pas au début de l'optimisation, puis de plus petits pas pour converger vers un minimum local précis.
+
+\begin{figure}[H]
+    \centering
+    \includegraphics[width=0.6\textwidth]{images/learning_rate.png}
+    \caption{Évolution du Learning Rate (Step Decay).}
+    \label{fig:lr}
+\end{figure}
+
+\subsection{Performance Quantitative}
+Le tableau ci-dessous détaille la progression numérique de la perte. On constate une réduction drastique de l'erreur, divisée par plus de 3 entre le début et la fin.
+
+\begin{table}[H]
+    \centering
+    \begin{tabular}{ccc}
+        \toprule
+        \textbf{Itération} & \textbf{Phase} & \textbf{Loss (Train)} \\
+        \midrule
+        0 & Initialisation & 9.89 \\
+        100 & Début & 5.69 \\
+        1000 & Epoch 1 & 4.10 \\
+        3000 & Epoch 4 & 3.47 \\
+        7000 & Epoch 10 & 3.00 \\
+        9000 & Epoch 13 & 2.75 \\
+        11000 & Fin & 2.60 \\
+        \bottomrule
+    \end{tabular}
+    \caption{Tableau récapitulatif de la convergence.}
+    \label{tab:loss}
+\end{table}
+
+\subsection{Analyse Qualitative}
+Nous avons soumis des images de l'ensemble de test (jamais vues par le modèle) pour générer des légendes.
+Les résultats montrent que le modèle a acquis une compréhension sémantique de la scène. Il est capable d'identifier les acteurs principaux (hommes, femmes, enfants, chiens), leurs actions (courir, jouer, s'asseoir) et souvent le contexte (sur l'herbe, dans la rue).
+
+Bien que certaines erreurs grammaticales ou de détails puissent subsister, la cohérence globale est satisfaisante. Le modèle parvient à lier les objets détectés par le CNN via le mécanisme d'attention pour former une phrase logique.
+
+\begin{figure}[H]
+    \centering
+    \includegraphics[width=0.45\textwidth]{output_examples/output.png}
+    \includegraphics[width=0.45\textwidth]{output_examples/output2.png}
+    \caption{Exemples de générations réussies.}
+    \label{fig:examples}
+\end{figure}
+
+\begin{figure}[H]
+    \centering
+    \includegraphics[width=0.45\textwidth]{output_examples/output3.png}
+    \includegraphics[width=0.45\textwidth]{output_examples/output4.png}
+    \caption{Autres exemples de prédictions.}
+    \label{fig:examples2}
+\end{figure}
+
+\newpage
+
+\section{Discussion et Perspectives}
+
+\subsection{Métriques d'Évaluation Automatisées}
+Dans ce TP, nous avons principalement utilisé la Loss et l'inspection visuelle. Cependant, pour une évaluation scientifique rigoureuse, il serait nécessaire d'utiliser des métriques standardisées en NLP :
+\begin{itemize}
+    \item \textbf{BLEU (Bilingual Evaluation Understudy)} : Mesure le chevauchement des n-grams entre la génération et les références. C'est la métrique historique.
+    \item \textbf{METEOR} : Prend en compte la synonymie et la racinisation (stemming).
+    \item \textbf{CIDEr} : Spécifique à l'image captioning, elle pondère les n-grams par TF-IDF pour donner plus d'importance aux mots rares et informatifs.
+\end{itemize}
+
+\subsection{Limites de l'Approche Actuelle}
+Notre modèle LSTM + Attention présente quelques limitations :
+\begin{itemize}
+    \item \textbf{Sérialité} : Le LSTM traite les mots un par un, ce qui empêche la parallélisation complète de l'entraînement.
+    \item \textbf{Oubli à long terme} : Malgré les portes du LSTM, l'information du début de phrase peut se perdre sur de très longues descriptions.
+    \item \textbf{Vocabulaire fixe} : Les mots hors vocabulaire (OOV) sont remplacés par <UNK>, perdant de l'information précise.
+\end{itemize}
+
+\subsection{Vers les Transformers et l'État de l'Art}
+Depuis 2017, l'architecture \textbf{Transformer} et son mécanisme de \textit{Self-Attention} ont révolutionné le domaine. Contrairement aux RNN, les Transformers traitent toute la séquence en parallèle et capturent des dépendances à très longue portée.
+Pour l'image captioning, l'état de l'art actuel repose souvent sur :
+\begin{itemize}
+    \item \textbf{Vision Transformers (ViT)} : Remplacent le CNN par un Transformer visuel qui découpe l'image en "patches".
+    \item \textbf{Modèles Multimodaux (ex: CLIP, BLIP)} : Ces modèles sont pré-entraînés sur des datasets gigantesques (400M+ paires image-texte) pour apprendre un espace latent commun entre vision et langage, permettant des performances "zero-shot" impressionnantes.
+\end{itemize}
+
+\section{Conclusion}
+Ce TP nous a permis de maîtriser les concepts fondamentaux du Deep Learning multimodal. Nous avons réussi à implémenter un pipeline complet : chargement de données, transfert learning avec ResNet, module d'attention personnalisé et génération de texte avec LSTM.
+Les résultats obtenus confirment l'efficacité de l'attention pour "guider" la génération de texte en se basant sur les caractéristiques visuelles. Cette architecture constitue la base historique sur laquelle se sont construits les modèles génératifs modernes.
+
+\end{document}
